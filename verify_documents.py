@@ -81,9 +81,9 @@ class DocumentValidator:
         try:
             # EasyOCR reader'ı başlat (Türkçe + İngilizce)
             self.reader = easyocr.Reader(['tr', 'en'], gpu=False)
-            print("✅ OCR motoru başarıyla başlatıldı.")
+            print("OCR motoru başarıyla başlatıldı.")
         except Exception as e:
-            print(f"⚠️ OCR başlatma hatası: {e}")
+            print(f"OCR başlatma hatası: {e}")
             self.reader = None
     
     def preprocess_image(self, image_path: str) -> np.ndarray:
@@ -247,6 +247,70 @@ class DocumentValidator:
         normalized = ' '.join(normalized.split())
         
         return normalized
+
+    # Yardımcı: EasyOCR bbox -> dikdörtgen
+    def _rect_from_bbox(self, bbox: List[List[float]]) -> Tuple[int, int, int, int]:
+        xs = [p[0] for p in bbox]
+        ys = [p[1] for p in bbox]
+        x_min, x_max = int(min(xs)), int(max(xs))
+        y_min, y_max = int(min(ys)), int(max(ys))
+        return x_min, y_min, x_max, y_max
+
+    def _center_of_rect(self, rect: Tuple[int, int, int, int]) -> Tuple[int, int]:
+        x_min, y_min, x_max, y_max = rect
+        return (x_min + x_max) // 2, (y_min + y_max) // 2
+
+    def _is_text_value(self, text: str) -> bool:
+        text_stripped = text.strip()
+        return len(text_stripped) >= 2 and all(ch.isalpha() or ch.isspace() for ch in text_stripped)
+
+    def _find_value_near_label(self, ocr_results: List, label_keywords: List[str]) -> Optional[str]:
+        """
+        Bir etiket (ör. SOYADI / SURNAME) için, etiket kutusuna en yakın metin değerini döndürür.
+        """
+        label_candidates: List[Tuple[Tuple[int,int,int,int], float]] = []
+        for (bbox, text, confidence) in ocr_results:
+            if confidence < self.MIN_CONFIDENCE:
+                continue
+            upper = text.upper()
+            if any(k in upper for k in label_keywords):
+                label_candidates.append((self._rect_from_bbox(bbox), confidence))
+
+        if not label_candidates:
+            return None
+
+        # En güvenilir etiketi kullan
+        label_rect, _ = max(label_candidates, key=lambda rc: rc[1])
+        label_cx, label_cy = self._center_of_rect(label_rect)
+
+        best_text = None
+        best_dist = 10**9
+        for (bbox, text, confidence) in ocr_results:
+            if confidence < self.MIN_CONFIDENCE:
+                continue
+            if not self._is_text_value(text):
+                continue
+            # Etiket metninin kendisini veya başlıkları değer olarak kullanmayalım
+            upper_text = text.upper()
+            if any(k in upper_text for k in label_keywords):
+                continue
+            if any(h in upper_text for h in [
+                'TÜRKİYE', 'CUMHURİYETİ', 'IDENTITY', 'CARD', 'T.C', 'TC',
+                'SOYADI', 'SURNAME', 'ADI', 'GIVEN', 'NAME', 'NAMES']):
+                continue
+            value_rect = self._rect_from_bbox(bbox)
+            vx, vy = self._center_of_rect(value_rect)
+            # Tercihen etiketin sağında veya hemen altında olan değerleri seç
+            to_right = vx >= label_cx
+            below = vy >= label_cy
+            if not (to_right or below):
+                continue
+            dist = abs(vx - label_cx) + abs(vy - label_cy)
+            if dist < best_dist:
+                best_dist = dist
+                best_text = text.strip()
+
+        return best_text
     
     def extract_document_info(self, image_path: str) -> DocumentInfo:
         """
@@ -313,49 +377,44 @@ class DocumentValidator:
     
     def _extract_id_card_name(self, ocr_results: List) -> Optional[str]:
         """
-        Kimlik kartından ad ve soyadı ayrı ayrı çıkarır.
-        
-        Args:
-            ocr_results: OCR sonuçları
-            
-        Returns:
-            Birleştirilmiş ad soyad
+        Kimlik kartından ad ve soyadı, etiketlerine göre çıkarır ve 'ADI SOYADI' sırası ile döndürür.
         """
+        # Öncelik: Etiket bazlı yakalama
+        given = self._find_value_near_label(ocr_results, ["ADI", "GIVEN NAME", "GIVEN NAME(S)", "GIVEN NAMES"])
+        surname = self._find_value_near_label(ocr_results, ["SOYADI", "SURNAME"])
+
+        def clean_token(t: Optional[str]) -> Optional[str]:
+            if not t:
+                return None
+            # Sadece harf ve boşluk
+            filtered = re.sub(r"[^A-Za-zÇĞİÖŞÜçğıöşü\s]", "", t).strip()
+            return filtered if filtered else None
+
+        given = clean_token(given)
+        surname = clean_token(surname)
+
+        if given and surname:
+            return f"{given.upper()} {surname.upper()}"
+
+        # Geriye dönüş: mevcut basit mantık
         given_name = None
-        surname = None
-        
-        # Tüm OCR sonuçlarını analiz et
+        surname_name = None
         for (bbox, text, confidence) in ocr_results:
             if confidence < self.MIN_CONFIDENCE:
                 continue
-            
-            text_upper = text.upper().strip()
-            
-            # Soyadı ara (KARACA gibi)
-            if not surname and len(text_upper) >= 3:
-                # Sadece harflerden oluşan, başlık olmayan metinler
-                if (text_upper.isalpha() and 
-                    text_upper not in ['SOYADI', 'SURNAME', 'ADI', 'GIVEN', 'NAMES', 'TÜRKİYE', 'CUMHURİYETİ']):
-                    surname = text_upper
-                    continue
-            
-            # Ad ara (ALİ gibi)
-            if not given_name and len(text_upper) >= 2:
-                if (text_upper.isalpha() and 
-                    text_upper not in ['SOYADI', 'SURNAME', 'ADI', 'GIVEN', 'NAMES', 'TÜRKİYE', 'CUMHURİYETİ']):
-                    given_name = text_upper
-                    continue
-        
-        # Ad ve soyadı birleştir
-        if given_name and surname:
-            # Soyadı önce, ad sonra (Türk geleneği)
-            return f"{surname} {given_name}"
-        elif surname:
-            return surname
-        elif given_name:
-            return given_name
-        
-        return None
+            val = clean_token(text)
+            if not val or not val.replace(" ", "").isalpha():
+                continue
+            up = val.upper()
+            if not surname_name and up not in ["SOYADI", "SURNAME", "ADI", "GIVEN", "NAMES", "TÜRKİYE", "CUMHURİYETİ"] and len(up) >= 3:
+                surname_name = up
+                continue
+            if not given_name and up not in ["SOYADI", "SURNAME", "ADI", "GIVEN", "NAMES", "TÜRKİYE", "CUMHURİYETİ"] and len(up) >= 2:
+                given_name = up
+                continue
+        if given_name and surname_name:
+            return f"{given_name} {surname_name}"
+        return given_name or surname_name
     
     def _extract_form_name(self, ocr_results: List) -> Optional[str]:
         """
@@ -369,51 +428,36 @@ class DocumentValidator:
         """
 
         
-        # Başlık kelimeleri (tam eşleşme için)
-        header_words = {
-            'BAŞVURU FORMU', 'AD SOYAD', 'TC KİMLİK', 'KİMLİK NUMARASI',
-            'TELEFON', 'E-POSTA', 'ADRES', 'İMZA', 'TARİH'
-        }
-        
-        # En iyi adayı bul
+        # Öncelik: 'Ad Soyad' etiketine göre değeri al
+        value = self._find_value_near_label(ocr_results, ["AD SOYAD", "AD SOYAD:"])
+        if value:
+            # Temizle ve sadece iki kelimeyi bırak
+            clean = re.sub(r"[^A-Za-zÇĞİÖŞÜçğıöşü\s]", "", value).strip()
+            parts = [p for p in clean.split() if p.isalpha()]
+            if len(parts) >= 2:
+                return f"{parts[0]} {parts[1]}"
+            elif len(parts) == 1:
+                return parts[0]
+
+        # Geriye dönüş: en iyi 2+ kelimeli satırı seç
+        header_words = {'BAŞVURU FORMU', 'AD SOYAD', 'TC KİMLİK', 'KİMLİK NUMARASI','TELEFON','E-POSTA','ADRES','İMZA','TARİH'}
         best_candidate = None
         best_confidence = 0.0
-        
         for (bbox, text, confidence) in ocr_results:
             if confidence < self.MIN_CONFIDENCE:
                 continue
-            
             text_clean = text.strip()
-            
-            # Başlık kelimeleri değilse ve 2+ kelime içeriyorsa
-            if (text_clean.upper() not in header_words and 
-                ' ' in text_clean and 
-                len(text_clean.split()) >= 2):
-                
-                words = text_clean.split()
-                # İlk iki kelime sadece harflerden oluşmalı
-                if all(word.isalpha() for word in words[:2]):
-                    # Bu aday daha iyi mi?
-                    if confidence > best_confidence:
-                        best_candidate = ' '.join(words[:2])
-                        best_confidence = confidence
-                        print(f"🔍 Yeni aday bulundu: {best_candidate} (güven: %{confidence*100:.1f})", file=sys.stderr)
-        
-        if best_candidate:
-            return best_candidate
-        
-        return None
+            if (text_clean.upper() not in header_words and ' ' in text_clean and len(text_clean.split()) >= 2):
+                words = [w for w in text_clean.split() if w.isalpha()]
+                if len(words) >= 2 and confidence > best_confidence:
+                    best_candidate = f"{words[0]} {words[1]}"
+                    best_confidence = confidence
+        return best_candidate
     
     def compare_documents(self, id_data: DocumentInfo, form_data: DocumentInfo) -> ValidationResult:
         """
-        İki belgeyi karşılaştırır.
-        
-        Args:
-            id_data: Kimlik kartı bilgileri
-            form_data: Form bilgileri
-            
-        Returns:
-            Karşılaştırma sonucu
+        İki belgeyi katı kurallarla karşılaştırır: TCKN tam eşleşmeli,
+        soyad eşleşmesi zorunlu, ad için güçlü benzerlik aranır.
         """
         details = {
             "id_name": id_data.name,
@@ -423,47 +467,54 @@ class DocumentValidator:
             "name_similarity": 0.0,
             "tckn_match": False
         }
-        
-        # TCKN karşılaştırması (tam eşleşme)
-        tckn_match = False
-        if id_data.tckn and form_data.tckn:
-            tckn_match = id_data.tckn == form_data.tckn
-            details["tckn_match"] = tckn_match
-        
-        # İsim karşılaştırması (bulanık eşleşme)
+
+        # TCKN karşılaştırması
+        tckn_match = bool(id_data.tckn and form_data.tckn and id_data.tckn == form_data.tckn)
+        details["tckn_match"] = tckn_match
+
         name_similarity = 0.0
         name_match = False
-        
         if id_data.name and form_data.name:
-            # Normalize edilmiş isimleri karşılaştır
-            norm_id_name = self.normalize_name(id_data.name)
-            norm_form_name = self.normalize_name(form_data.name)
-            
-            # Farklı karşılaştırma yöntemleri
-            ratio_score = fuzz.ratio(norm_id_name, norm_form_name)
-            partial_score = fuzz.partial_ratio(norm_id_name, norm_form_name)
-            token_sort_score = fuzz.token_sort_ratio(norm_id_name, norm_form_name)
-            
-            # En yüksek skoru al
-            name_similarity = max(ratio_score, partial_score, token_sort_score)
-            name_match = name_similarity >= self.MIN_FUZZ_SCORE
-            
-            details["name_similarity"] = name_similarity
-        
-        # Sonuç belirleme
+            id_norm = self.normalize_name(id_data.name)
+            form_norm = self.normalize_name(form_data.name)
+
+            id_tokens = [t for t in id_norm.split() if len(t) > 1]
+            form_tokens = [t for t in form_norm.split() if len(t) > 1]
+            if id_tokens and form_tokens:
+                id_given, id_surname = id_tokens[0], id_tokens[-1]
+                form_given, form_surname = form_tokens[0], form_tokens[-1]
+
+                # Soyad tam eşleşme ya da çok yüksek benzerlik
+                surname_ratio = fuzz.ratio(id_surname, form_surname)
+                surname_ok = (id_surname == form_surname) or surname_ratio >= 90
+
+                # Ad için yüksek benzerlik veya içerme
+                given_ratio = max(
+                    fuzz.ratio(id_given, form_given),
+                    fuzz.partial_ratio(id_given, form_given)
+                )
+                given_ok = given_ratio >= 85
+
+                # Toplam isim benzerliği (ağırlıklı)
+                full_ratio = max(
+                    fuzz.ratio(" ".join(id_tokens), " ".join(form_tokens)),
+                    fuzz.token_sort_ratio(" ".join(id_tokens), " ".join(form_tokens))
+                )
+                name_similarity = max(full_ratio, int(0.6 * surname_ratio + 0.4 * given_ratio))
+                name_match = surname_ok and (name_similarity >= max(self.MIN_FUZZ_SCORE, 85))
+
+        details["name_similarity"] = name_similarity
+
         if tckn_match and name_match:
             message = "Olumlu - Tüm bilgiler eşleşiyor"
             is_valid = True
-        elif not name_match:
-            message = f"Belgedeki Ad Soyad Hatalı (Benzerlik: %{name_similarity:.1f})"
-            is_valid = False
         elif not tckn_match:
             message = "Belgedeki TC Kimlik Numarası Hatalı"
             is_valid = False
         else:
-            message = "Belge bilgileri çıkarılamadı"
+            message = f"Belgedeki Ad Soyad Hatalı (Benzerlik: %{name_similarity:.1f})"
             is_valid = False
-        
+
         return ValidationResult(
             is_valid=is_valid,
             message=message,
@@ -550,12 +601,12 @@ def main():
         
         # Detaylı çıktı
         if args.verbose:
-            print(f"\n Sonuç:")
-            print(f"   Kimlik Kartı: {id_data.name} - {id_data.tckn}")
-            print(f"   Başvuru Formu: {form_data.name} - {form_data.tckn}")
-            print(f"   İsim Benzerliği: %{result.name_similarity:.1f}")
-            print(f"   TCKN: {'Eşleşti' if result.tckn_match else 'Eşleşmedi'}")
-            print(f"   OCR Güven Skoru: %{max(id_data.confidence, form_data.confidence):.1f}")
+            print(f"\nSonuç:")
+            print(f"Kimlik Kartı: {id_data.name} - {id_data.tckn}")
+            print(f"Başvuru Formu: {form_data.name} - {form_data.tckn}")
+            print(f"İsim Benzerliği: %{result.name_similarity:.1f}")
+            print(f"TCKN: {'Eşleşti' if result.tckn_match else 'Eşleşmedi'}")
+            print(f"OCR Güven Skoru: %{max(id_data.confidence, form_data.confidence):.1f}")
         
     except (ValueError, FileNotFoundError) as e:
         print(f"Hata: {str(e)}", file=sys.stderr)

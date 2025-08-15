@@ -427,20 +427,14 @@ class DocumentValidator:
         
         for method_name, preprocess_func in preprocessing_methods:
             try:
-                print(f"  Deneniyor: {method_name} ön işleme...", file=sys.stderr)
-                
                 # Görüntüyü ön işle
                 processed_image = preprocess_func(image_path)
                 
                 # OCR işlemi
                 results = self.reader.readtext(processed_image)
                 
-                # Debug: OCR sonuçlarını göster
                 if len(results) == 0:
-                    print(f"    ⚠️  {method_name}: OCR sonuç bulunamadı", file=sys.stderr)
                     continue
-                
-                print(f"    ✅ {method_name}: {len(results)} OCR sonucu bulundu", file=sys.stderr)
                 
                 extracted_name = None
                 extracted_tckn = None
@@ -453,16 +447,14 @@ class DocumentValidator:
                     # Form için özel işlem
                     extracted_name = self._extract_form_name(results)
                 
-                # TCKN ara - daha düşük güven skoru ile
+                # TCKN ara
                 for (bbox, text, confidence) in results:
-                    # TCKN için daha düşük eşik kullan
-                    if confidence < 0.2:  # TCKN için daha düşük eşik
+                    if confidence < 0.2:
                         continue
                     tckn = self.extract_tckn_from_text(text)
                     if tckn:
                         extracted_tckn = tckn
                         method_confidence = max(method_confidence, confidence)
-                        print(f"    ✅ TCKN bulundu: {tckn} (güven: {confidence:.2f})", file=sys.stderr)
                         break
                 
                 # TCKN bulunamadıysa tüm sonuçlarda ara
@@ -474,29 +466,7 @@ class DocumentValidator:
                         if tckn:
                             extracted_tckn = tckn
                             method_confidence = max(method_confidence, confidence)
-                            print(f"    ✅ TCKN bulundu (ikinci arama): {tckn} (güven: {confidence:.2f})", file=sys.stderr)
                             break
-                
-                # İsim bulunamadıysa debug bilgisi
-                if not extracted_name:
-                    print(f"    ⚠️  İsim bulunamadı. En iyi sonuçlar:", file=sys.stderr)
-                    for i, (bbox, text, confidence) in enumerate(results[:5]):
-                        if confidence > 0.3:
-                            print(f"      {i+1}. '{text}' (güven: {confidence:.2f})", file=sys.stderr)
-                
-                # İsim bulunamadıysa debug bilgisi
-                if not extracted_name:
-                    print(f"    ⚠️  İsim bulunamadı. En iyi sonuçlar:", file=sys.stderr)
-                    for i, (bbox, text, confidence) in enumerate(results[:10]):
-                        if confidence > 0.2:
-                            print(f"      {i+1}. '{text}' (güven: {confidence:.2f})", file=sys.stderr)
-                
-                # TCKN bulunamadıysa debug bilgisi
-                if not extracted_tckn:
-                    print(f"    ⚠️  TCKN bulunamadı. Sayısal sonuçlar:", file=sys.stderr)
-                    for i, (bbox, text, confidence) in enumerate(results):
-                        if confidence > 0.2 and any(c.isdigit() for c in text):
-                            print(f"      {i+1}. '{text}' (güven: {confidence:.2f})", file=sys.stderr)
                 
                 # Bu yöntemin sonucunu değerlendir
                 current_score = 0
@@ -515,19 +485,13 @@ class DocumentValidator:
                         confidence=method_confidence,
                         extraction_method=f"OCR-{method_name}"
                     )
-                    print(f"    🎯 En iyi sonuç güncellendi: {method_name}", file=sys.stderr)
                 
                 # Eğer hem isim hem TCKN bulunduysa, daha fazla deneme yapmaya gerek yok
                 if extracted_name and extracted_tckn:
-                    print(f"    ✅ Mükemmel sonuç bulundu: {method_name}", file=sys.stderr)
                     break
                     
             except Exception as e:
-                print(f"    ❌ {method_name} hatası: {str(e)}", file=sys.stderr)
                 continue
-        
-        if not best_result.name and not best_result.tckn:
-            print(f"  ❌ Hiçbir yöntemle bilgi çıkarılamadı", file=sys.stderr)
         
         return best_result
     
@@ -833,10 +797,7 @@ def main():
             raise ValueError(f"Geçersiz form formatı: {args.form_image}")
         
         # Bilgileri çıkar
-        print("Kimlik kartı işleniyor...", file=sys.stderr)
         id_data = validator.extract_document_info(args.id_image)
-        
-        print("Başvuru formu işleniyor...", file=sys.stderr)
         form_data = validator.extract_document_info(args.form_image)
         
         # Hata kontrolü
@@ -858,7 +819,7 @@ def main():
         if args.verbose:
             print(f"\nKimlik Kartı: {id_data.name} - {id_data.tckn}")
             print(f"Başvuru Formu: {form_data.name} - {form_data.tckn}")
-            print(f"İsim Benzerliği: %{result.name_similarity:.1f}")
+            print(f"Ad Soyad: {'Eşleşti' if result.name_similarity > 80 else 'Eşleşmedi'}")
             print(f"TCKN: {'Eşleşti' if result.tckn_match else 'Eşleşmedi'}")
             print(f"OCR Güven Skoru: %{max(id_data.confidence, form_data.confidence) * 100:.1f}")
         

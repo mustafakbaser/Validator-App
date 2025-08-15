@@ -28,7 +28,7 @@ from dataclasses import dataclass
 import cv2
 import easyocr
 import numpy as np
-from rapidfuzz import fuzz, process
+from rapidfuzz import fuzz
 from PIL import Image, ImageEnhance
 
 

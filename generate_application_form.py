@@ -31,7 +31,7 @@ TURKISH_NAMES = [
 # Mobil operatör kodları
 PHONE_PREFIXES = ["532", "533", "534", "535", "536", "537", "538", "539", "540", "541"]
 
-# E-posta domaini (şirket standardı)
+# E-posta domaini
 EMAIL_DOMAIN = "mustafabaser.net"
 
 # Türkiye adres veritabanı
@@ -69,18 +69,22 @@ def generate_tckn() -> str:
     return ''.join(map(str, digits + [digit_10, digit_11]))
 
 
-def generate_mock_data() -> Dict[str, str]:
+def generate_mock_data(tckn: str = None) -> Dict[str, str]:
     """
     Gerçekçi başvuru verisi oluşturur.
     
+    Args:
+        tckn: TC Kimlik Numarası (None ise rastgele üretilir)
+        
     Returns:
         Dict[str, str]: Başvuru formu için gerekli tüm alanlar
     """
     # İsim seçimi
     full_name = random.choice(TURKISH_NAMES)
     
-    # TCKN oluşturma
-    tckn = generate_tckn()
+    # TCKN (verilmişse kullan, yoksa üret)
+    if tckn is None:
+        tckn = generate_tckn()
     
     # Telefon numarası oluşturma
     phone_prefix = random.choice(PHONE_PREFIXES)
@@ -314,6 +318,12 @@ def main():
         default=1,
         help="Oluşturulacak form sayısı (varsayılan: 1)"
     )
+    parser.add_argument(
+        "--tckn", 
+        type=str,
+        default=None,
+        help="TC Kimlik Numarası (belirtilmezse rastgele üretilir)"
+    )
     
     args = parser.parse_args()
     
@@ -323,12 +333,12 @@ def main():
         os.makedirs(output_folder)
         print(f"'{output_folder}' klasörü oluşturuldu.")
     else:
-        print(f"'{output_folder}' klasörü zaten mevcut.")
+        print(f"'{output_folder}' klasörü bulundu.")
     
     try:
         for i in range(args.count):
             # Başvuru verisi oluşturma
-            data = generate_mock_data()
+            data = generate_mock_data(args.tckn)
             
             # Dosya adları
             if args.count > 1:

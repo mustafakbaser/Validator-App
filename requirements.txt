@@ -1,0 +1,15 @@
+# Gerekli Python kütüphaneleri
+
+# OCR ve Görüntü İşleme
+easyocr>=1.7.0,<2.0.0
+opencv-python>=4.8.0,<5.0.0
+Pillow>=10.0.0,<11.0.0
+
+# String Karşılaştırma
+rapidfuzz>=3.0.0,<4.0.0
+
+# PDF Oluşturma
+reportlab>=4.0.0,<4.1.0
+
+# Sayısal İşlemler
+numpy>=1.24.0,<2.0.0

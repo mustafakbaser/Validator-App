@@ -339,6 +339,10 @@ class DocumentValidator:
             # Kimlik kartı için özel işlem
             if "kimlik" in image_path.lower() or "id" in image_path.lower():
                 extracted_name = self._extract_id_card_name(results)
+                # Kimlik kartından en yüksek güven skorunu al
+                for (bbox, text, confidence) in results:
+                    if confidence > best_confidence:
+                        best_confidence = confidence
             else:
                 # Form için özel işlem
                 extracted_name = self._extract_form_name(results)
@@ -363,6 +367,12 @@ class DocumentValidator:
                         extracted_tckn = tckn
                         best_confidence = max(best_confidence, confidence)
                         break
+            
+            # Genel güven: sonuçlarda görülen en yüksek güven skoru
+            if results:
+                overall_conf = max((conf for (_, _, conf) in results), default=0.0)
+                best_confidence = max(best_confidence, overall_conf)
+
             
             return DocumentInfo(
                 name=extracted_name,
@@ -435,6 +445,7 @@ class DocumentValidator:
             clean = re.sub(r"[^A-Za-zÇĞİÖŞÜçğıöşü\s]", "", value).strip()
             parts = [p for p in clean.split() if p.isalpha()]
             if len(parts) >= 2:
+
                 return f"{parts[0]} {parts[1]}"
             elif len(parts) == 1:
                 return parts[0]
@@ -470,6 +481,7 @@ class DocumentValidator:
 
         # TCKN karşılaştırması
         tckn_match = bool(id_data.tckn and form_data.tckn and id_data.tckn == form_data.tckn)
+        
         details["tckn_match"] = tckn_match
 
         name_similarity = 0.0
@@ -495,24 +507,29 @@ class DocumentValidator:
                 )
                 given_ok = given_ratio >= 85
 
-                # Toplam isim benzerliği (ağırlıklı)
-                full_ratio = max(
-                    fuzz.ratio(" ".join(id_tokens), " ".join(form_tokens)),
-                    fuzz.token_sort_ratio(" ".join(id_tokens), " ".join(form_tokens))
-                )
-                name_similarity = max(full_ratio, int(0.6 * surname_ratio + 0.4 * given_ratio))
-                name_match = surname_ok and (name_similarity >= max(self.MIN_FUZZ_SCORE, 85))
+        # Toplam isim benzerliği (ağırlıklı)
+        full_ratio = max(
+            fuzz.ratio(" ".join(id_tokens), " ".join(form_tokens)),
+            fuzz.token_sort_ratio(" ".join(id_tokens), " ".join(form_tokens))
+        )
+        # İsim eşleşmesi: soyad tam eşleşmeli, ad yüksek benzerlik
+        name_match = surname_ok and given_ok
+        # Benzerlik skoru sadece bilgi amaçlı (eşleşme kararı için kullanılmaz)
+        name_similarity = max(full_ratio, int(0.6 * surname_ratio + 0.4 * given_ratio))
 
         details["name_similarity"] = name_similarity
 
         if tckn_match and name_match:
             message = "Olumlu - Tüm bilgiler eşleşiyor"
             is_valid = True
+        elif not tckn_match and not name_match:
+            message = "Belgedeki TC Kimlik Numarası Hatalı ve Belgedeki Ad Soyad Hatalı"
+            is_valid = False
         elif not tckn_match:
             message = "Belgedeki TC Kimlik Numarası Hatalı"
             is_valid = False
         else:
-            message = f"Belgedeki Ad Soyad Hatalı (Benzerlik: %{name_similarity:.1f})"
+            message = "Belgedeki Ad Soyad Hatalı"
             is_valid = False
 
         return ValidationResult(
@@ -606,7 +623,7 @@ def main():
             print(f"Başvuru Formu: {form_data.name} - {form_data.tckn}")
             print(f"İsim Benzerliği: %{result.name_similarity:.1f}")
             print(f"TCKN: {'Eşleşti' if result.tckn_match else 'Eşleşmedi'}")
-            print(f"OCR Güven Skoru: %{max(id_data.confidence, form_data.confidence):.1f}")
+            print(f"OCR Güven Skoru: %{max(id_data.confidence, form_data.confidence) * 100:.1f}")
         
     except (ValueError, FileNotFoundError) as e:
         print(f"Hata: {str(e)}", file=sys.stderr)

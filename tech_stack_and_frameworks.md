@@ -1,4 +1,4 @@
-## 2. Teknoloji ve Kütüphane Seçimi (Teorik)
+## 2. Teknoloji ve Kütüphane Seçimi
 
 Bu bölümde, projenin gerçekleştirilmesinde kullanılacak teknolojileri, kütüphaneleri ve algoritmaları neden seçtiğimi açıklayacağım. Burada izlemeyi düşündüğüm yaklaşım sektörde kendini kanıtlamış, aktif olarak kullanılan ve ölçeklenebilir çözümler sunan teknolojileri tercih etmek olacaktır.
 

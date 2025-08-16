@@ -1,13 +1,6 @@
-# 1. Teknik Tasarım ve Mimari (Teorik)
+# 1. Teknik Tasarım ve Mimari
 
 Bu bölümde, sistemin temel mimarisini, bileşenlerini ve iletişim akışını detaylı şekilde açıklayacağım. Amaç, yalnızca çalışır bir PoC (Proof of Concept) değil, ölçeklenebilir, güvenli, sürdürülebilir bir sistem mimarisi oluşturmaktır.
-
-# 1. Teknik Tasarım ve Mimari (Teorik)
-
-Bu bölümde, kullanıcının kimlik kartı ve imzalı form gibi belgelerini yükleyerek doğrulamasını sağlayacak sistemin **teknik tasarımı ve mimarisini** detaylandırdım. Amaç, sadece temel bir prototip değil, **endüstri standartlarına uygun, ölçeklenebilir, güvenli ve sürdürülebilir bir sistem mimarisi** oluşturmak. 
-
-Tasarım sürecinde, sistemin ana bileşenlerini, bileşenler arasındaki veri akışını, kullanılacak teknolojileri ve operasyonel gereklilikleri bir bütün olarak değerlendiriyoruz. Bu yaklaşım, hem mevcut işlevsellik ihtiyaçlarını karşılamayı hem de gelecekteki iyileştirme ve entegrasyonlar için esneklik sağlamayı hedefliyor.
-
 
 ---
 

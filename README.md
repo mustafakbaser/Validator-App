@@ -2,6 +2,12 @@
 
 T.C. Kimlik Kartı ve başvuru formları arasındaki bilgi tutarlılığını otomatik olarak doğrulayan gelişmiş bir belge doğrulama sistemi. OCR teknolojisi, görüntü işleme algoritmaları ve akıllı string eşleştirme yöntemleri kullanarak yüksek doğruluk oranında belge karşılaştırması gerçekleştirir.
 
+## Detaylı Dokümantasyon
+- [Teknik Tasarım ve Mimari](https://github.com/mustafakbaser/Validator-App/blob/main/technical_design_and_architecture.md)
+- [Teknoloji ve Kütüphane Seçimi](https://github.com/mustafakbaser/Validator-App/blob/main/tech_stack_and_frameworks.md)
+- [Potansiyel İyileştirmeler ve Riskler](https://github.com/mustafakbaser/Validator-App/blob/main/potential_optimizations_and_risks.md)
+
+
 ## Özellikler
 
 - **Çoklu Format Desteği**: JPG, PNG, BMP, TIFF formatlarında belge işleme

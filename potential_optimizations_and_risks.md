@@ -1,4 +1,4 @@
-### 4. Potansiyel İyileştirmeler ve Riskler (Teorik)
+### 4. Potansiyel İyileştirmeler ve Riskler
 
 Bir sistem kurarken yalnızca avantajları değil, olası zayıf noktaları ve riskleri değerlendirmek de önem taşır. Bu, ilerde ortaya çıkabilecek sorunların çözüm yöntemlerini, sistemin en başından almasını ve sistemin yaşanabilir ve güvenilir olmasını sağlar.
 

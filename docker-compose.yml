@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  validator-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app
+    container_name: validator-app
+    volumes:
+      # Mount input/output directories
+      - ./input:/app/input:ro
+      - ./output:/app/output
+      - ./application_forms:/app/application_forms
+      # Mount logs directory
+      - ./logs:/app/logs
+    environment:
+      - PYTHONPATH=/app
+      - LOG_LEVEL=INFO
+    ports:
+      - "8000:8000"  # For future API development
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - validator-network
+
+  # Development service with hot reload
+  validator-app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app
+    container_name: validator-app-dev
+    volumes:
+      # Mount source code for development
+      - .:/app
+      - ./input:/app/input:ro
+      - ./output:/app/output
+      - ./application_forms:/app/application_forms
+      - ./logs:/app/logs
+    environment:
+      - PYTHONPATH=/app
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8001:8000"
+    restart: unless-stopped
+    profiles:
+      - dev
+    networks:
+      - validator-network
+
+networks:
+  validator-network:
+    driver: bridge
+
+volumes:
+  app-data:
+    driver: local
